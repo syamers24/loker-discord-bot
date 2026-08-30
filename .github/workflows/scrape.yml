@@ -3,7 +3,7 @@ name: LinkedIn Job Scraper Bot
 on:
   schedule:
     # Berjalan otomatis setiap 4 jam sekali
-    - cron: '0 */4 * * *'
+    - cron: '0 23,5,11 * * *'
   # Memungkinkan Anda menjalankan bot ini secara manual kapan saja
   workflow_dispatch:
 
