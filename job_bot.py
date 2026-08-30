@@ -2,6 +2,7 @@ import os
 import json
 import requests
 import re
+import pandas as pd
 from jobspy import scrape_jobs
 
 # 1. Konfigurasi Pencarian Loker
