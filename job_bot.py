@@ -17,7 +17,7 @@ LOCATION = "Indonesia"
 # --- TITIK UBAH LIMIT ---
 RESULTS_PER_TERM = 3       # Ubah dari 10 menjadi 3 (agar pencarian tidak terlalu luas)
 MAX_POSTS_PER_RUN = 5      # Batas MAKSIMAL total pesan yang boleh dikirim ke Discord dalam 1x jalan
-PLATFORMS = ["linkedin", "indeed", "glassdoor"]   # Opsional: Jika masih terlalu banyak, ciutkan sementara ke LinkedIn saja
+PLATFORMS = ["linkedin", "indeed"]   # Opsional: Jika masih terlalu banyak, ciutkan sementara ke LinkedIn saja
 
 SEEN_JOBS_FILE = "seen_jobs.json"
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
