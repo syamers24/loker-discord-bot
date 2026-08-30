@@ -1,2 +1,2 @@
 # loker-discord-bot
-Test Discord Bot
+Test Discord Bot beta 0.01
