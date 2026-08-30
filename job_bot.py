@@ -1,6 +1,7 @@
 import os
 import json
 import requests
+import re
 from jobspy import scrape_jobs
 
 # 1. Konfigurasi Pencarian Loker
@@ -12,32 +13,40 @@ SEARCH_TERMS = [
     "DevOps Engineer"
 ]
 LOCATION = "Indonesia"
-RESULTS_PER_TERM = 10  # Jumlah loker yang dicari per kata kunci
-SEEN_JOBS_FILE = "seen_jobs.json"
 
-# Read Webhook URL dari GitHub Secrets
+# --- TITIK UBAH LIMIT ---
+RESULTS_PER_TERM = 3       # Ubah dari 10 menjadi 3 (agar pencarian tidak terlalu luas)
+MAX_POSTS_PER_RUN = 5      # Batas MAKSIMAL total pesan yang boleh dikirim ke Discord dalam 1x jalan
+PLATFORMS = ["linkedin"]   # Opsional: Jika masih terlalu banyak, ciutkan sementara ke LinkedIn saja
+
+SEEN_JOBS_FILE = "seen_jobs.json"
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
+def generate_fingerprint(title, company):
+    """
+    Membuat sidik jari unik dari Perusahaan + Judul Loker.
+    Contoh: 'Data Engineer - Cloud' di 'PT. Telkom' -> 'pttelkom-dataengineercloud'
+    """
+    clean_title = re.sub(r'[^a-zA-Z0-9]', '', str(title).lower())
+    clean_company = re.sub(r'[^a-zA-Z0-9]', '', str(company).lower())
+    return f"{clean_company}-{clean_title}"
+
 def load_seen_jobs():
-    """Membaca ID loker yang sudah pernah dikirim agar tidak duplikat."""
     if os.path.exists(SEEN_JOBS_FILE):
         try:
             with open(SEEN_JOBS_FILE, "r") as f:
                 return set(json.load(f))
-        except Exception as e:
-            print(f"Error membaca {SEEN_JOBS_FILE}: {e}")
+        except Exception:
             return set()
     return set()
 
 def save_seen_jobs(seen_jobs):
-    """Menyimpan ID loker terbaru ke file JSON."""
     with open(SEEN_JOBS_FILE, "w") as f:
         json.dump(list(seen_jobs), f, indent=2)
 
 def send_to_discord(job):
-    """Mengirim info loker ke Discord channel menggunakan Embed yang rapi."""
     if not DISCORD_WEBHOOK_URL:
-        print("DISCORD_WEBHOOK_URL tidak ditemukan pada Environment Variables.")
+        print("Webhook URL tidak ditemukan.")
         return False
 
     title = job.get("title", "Lowongan Baru")
@@ -45,20 +54,23 @@ def send_to_discord(job):
     location = job.get("location", "Indonesia")
     job_url = job.get("job_url", "")
     date_posted = job.get("date_posted", "Baru saja")
+    
+    # Menambahkan ikon sumber platform agar member tahu loker ini dari mana
+    site = str(job.get("site", "Web")).capitalize()
 
     payload = {
         "embeds": [
             {
                 "title": f"💼 {title}",
                 "url": job_url,
-                "color": 3447003,  # Warna Biru khas LinkedIn
+                "color": 5814783, 
                 "fields": [
                     {"name": "🏢 Perusahaan", "value": str(company), "inline": True},
                     {"name": "📍 Lokasi", "value": str(location), "inline": True},
                     {"name": "📅 Tanggal Posting", "value": str(date_posted), "inline": False}
                 ],
                 "footer": {
-                    "text": "Info Loker Tech Indonesia • LinkedIn"
+                    "text": f"Info Loker Tech Indonesia • Sumber: {site}"
                 }
             }
         ]
@@ -66,24 +78,26 @@ def send_to_discord(job):
 
     response = requests.post(DISCORD_WEBHOOK_URL, json=payload)
     if response.status_code in [200, 204]:
-        print(f"[Berhasil Dikirim] {title} - {company}")
+        print(f"[Terkirim] {site} | {company} - {title}")
         return True
-    else:
-        print(f"[Gagal Kirim] Status Code {response.status_code}: {response.text}")
-        return False
+    return False
 
 def main():
     seen_jobs = load_seen_jobs()
     new_jobs_count = 0
 
-    print("Memulai pengambilan lowongan dari LinkedIn...")
+    print("Memulai pengambilan lowongan dari beberapa platform...")
 
     for term in SEARCH_TERMS:
+        # Hentikan pencarian jika batas maksimal postingan sudah tercapai
+        if new_jobs_count >= MAX_POSTS_PER_RUN:
+            print(f"Batas maksimal {MAX_POSTS_PER_RUN} postingan per sesi telah tercapai. Menghentikan proses.")
+            break
+
         print(f"\nMencari role: {term}...")
         try:
-            # Menggunakan JobSpy untuk mengambil loker 24 jam terakhir dari LinkedIn
             jobs = scrape_jobs(
-                site_name=["linkedin"],
+                site_name=PLATFORMS,
                 search_term=term,
                 location=LOCATION,
                 results_wanted=RESULTS_PER_TERM,
@@ -96,21 +110,24 @@ def main():
                 continue
 
             for _, job in jobs.iterrows():
-                job_id = str(job.get("id"))
+                # Hentikan loop jika di tengah jalan sudah mencapai batas
+                if new_jobs_count >= MAX_POSTS_PER_RUN:
+                    break
+
+                fingerprint = generate_fingerprint(job.get("title"), job.get("company"))
                 
-                # Jika loker belum pernah dikirim ke Discord
-                if job_id and job_id not in seen_jobs:
+                if fingerprint and fingerprint not in seen_jobs:
                     success = send_to_discord(job)
                     if success:
-                        seen_jobs.add(job_id)
+                        seen_jobs.add(fingerprint)
                         new_jobs_count += 1
 
         except Exception as e:
-            print(f"Error saat mengeksekusi pencarian {term}: {e}")
+            print(f"Error saat mencari {term}: {e}")
 
-    # Simpan kembali ID yang sudah terkirim
+    # Simpan kembali daftar sidik jari yang sudah diperbarui
     save_seen_jobs(seen_jobs)
-    print(f"\nSelesai! {new_jobs_count} lowongan baru berhasil dikirim ke Discord.")
+    print(f"\nSelesai! Total {new_jobs_count} lowongan baru berhasil dikirim ke Discord.")
 
 if __name__ == "__main__":
     main()
