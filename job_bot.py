@@ -17,7 +17,7 @@ LOCATION = "Indonesia"
 # --- TITIK UBAH LIMIT ---
 RESULTS_PER_TERM = 3       # Ubah dari 10 menjadi 3 (agar pencarian tidak terlalu luas)
 MAX_POSTS_PER_RUN = 5      # Batas MAKSIMAL total pesan yang boleh dikirim ke Discord dalam 1x jalan
-PLATFORMS = ["linkedin"]   # Opsional: Jika masih terlalu banyak, ciutkan sementara ke LinkedIn saja
+PLATFORMS = ["linkedin", "indeed", "glassdoor"]   # Opsional: Jika masih terlalu banyak, ciutkan sementara ke LinkedIn saja
 
 SEEN_JOBS_FILE = "seen_jobs.json"
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
@@ -44,19 +44,37 @@ def save_seen_jobs(seen_jobs):
     with open(SEEN_JOBS_FILE, "w") as f:
         json.dump(list(seen_jobs), f, indent=2)
 
+def clean_field(value, default_text):
+    """
+    Memastikan data bernilai valid (bukan None, NaN, atau teks kosong).
+    """
+    if pd.isna(value) or value is None:
+        return default_text
+    
+    val_str = str(value).strip()
+    if not val_str or val_str.lower() in ["none", "nan", "null"]:
+        return default_text
+        
+    return val_str
+
 def send_to_discord(job):
     if not DISCORD_WEBHOOK_URL:
         print("Webhook URL tidak ditemukan.")
         return False
 
-    title = job.get("title", "Lowongan Baru")
-    company = job.get("company", "Perusahaan Tidak Diketahui")
-    location = job.get("location", "Indonesia")
-    job_url = job.get("job_url", "")
-    date_posted = job.get("date_posted", "Baru saja")
+    # Bersihkan setiap data dari nilai None / NaN
+    title = clean_field(job.get("title"), "Lowongan Kerja Tech")
+    company = clean_field(job.get("company"), "Perusahaan")
+    location = clean_field(job.get("location"), "Indonesia")
+    job_url = clean_field(job.get("job_url"), "")
+    date_posted = clean_field(job.get("date_posted"), "Baru saja")
     
-    # Menambahkan ikon sumber platform agar member tahu loker ini dari mana
-    site = str(job.get("site", "Web")).capitalize()
+    site = clean_field(job.get("site"), "Web").capitalize()
+
+    # Jika job_url kosong, kita tidak bisa mengirim link
+    if not job_url:
+        print(f"[Skip] URL tidak valid untuk {title}")
+        return False
 
     payload = {
         "embeds": [
@@ -65,9 +83,9 @@ def send_to_discord(job):
                 "url": job_url,
                 "color": 5814783, 
                 "fields": [
-                    {"name": "🏢 Perusahaan", "value": str(company), "inline": True},
-                    {"name": "📍 Lokasi", "value": str(location), "inline": True},
-                    {"name": "📅 Tanggal Posting", "value": str(date_posted), "inline": False}
+                    {"name": "🏢 Perusahaan", "value": company, "inline": True},
+                    {"name": "📍 Lokasi", "value": location, "inline": True},
+                    {"name": "📅 Tanggal Posting", "value": date_posted, "inline": False}
                 ],
                 "footer": {
                     "text": f"Info Loker Tech Indonesia • Sumber: {site}"
@@ -80,7 +98,9 @@ def send_to_discord(job):
     if response.status_code in [200, 204]:
         print(f"[Terkirim] {site} | {company} - {title}")
         return True
-    return False
+    else:
+        print(f"[Gagal Kirim] Status {response.status_code}: {response.text}")
+        return False
 
 def main():
     seen_jobs = load_seen_jobs()
